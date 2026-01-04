@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>AES Crypto Lab</title>
+
+<style>
+body {
+  font-family: "Trebuchet MS";
+  background: #f6efe7;
+  color: #3a3a3a;
+}
+.container {
+  width: 1000px;
+  margin: auto;
+  padding: 20px;
+}
+
+/* ✅ ONLY VISUAL BORDER + SHADOW UPGRADE */
+.card {
+  background: #fffaf0;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow:
+    0 6px 18px rgba(0,0,0,0.12),
+    0 0 0 1px rgba(255,255,255,0.6) inset;
+  margin-bottom: 20px;
+  position: relative;
+}
+
+label {
+  font-weight: bold;
+}
+textarea, select, button {
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  border-radius: 8px;
+}
+textarea { min-height: 90px; }
+button {
+  background: #8bc4a7;
+  border: none;
+  cursor: pointer;
+}
+button:disabled { background: #ccc; }
+
+.status { font-weight: bold; margin-top: 10px; }
+.green { color: green; }
+.red { color: red; }
+
+/* ⓘ Info icon */
+.info {
+  display: inline-block;
+  margin-left: 6px;
+  background: #8bc4a7;
+  color: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  text-align: center;
+  line-height: 18px;
+  font-size: 12px;
+  cursor: help;
+  position: relative;
+}
+.info:hover .tooltip {
+  display: block;
+}
+.tooltip {
+  display: none;
+  position: absolute;
+  background: #333;
+  color: #fff;
+  padding: 10px;
+  border-radius: 8px;
+  width: 260px;
+  top: 22px;
+  left: 0;
+  z-index: 100;
+  font-size: 13px;
+}
+
+/* Animated arrows */
+.flow {
+  text-align: center;
+  font-size: 24px;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0% { opacity: .3; }
+  50% { opacity: 1; }
+  100% { opacity: .3; }
+}
+
+/* Modal */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+}
+.modal-content {
+  background: #fffaf0;
+  width: 700px;
+  margin: 60px auto;
+  padding: 20px;
+  border-radius: 12px;
+}
+.close {
+  float: right;
+  cursor: pointer;
+  font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h2>🔐 AES Encryption & Attack Playground</h2>
+
+<div class="card">
+<label>AES Mode
+<span class="info">i
+  <span class="tooltip">
+    CBC: Legacy mode ❌ no integrity<br>
+    GCM: AEAD mode ✅ detects tampering
+  </span>
+</span>
+</label>
+<select id="mode" onchange="modeChanged()">
+  <option value="CBC">AES-CBC</option>
+  <option value="GCM">AES-GCM</option>
+</select>
+
+<label>Key Size
+<span class="info">i
+  <span class="tooltip">
+    AES supports only 128 / 192 / 256 bit keys.
+  </span>
+</span>
+</label>
+<select id="bits">
+  <option value="128">128-bit</option>
+  <option value="192">192-bit</option>
+  <option value="256">256-bit</option>
+</select>
+
+<label>
+<input type="checkbox" id="safeMode">
+ Memory-safe mode
+<span class="info">i
+  <span class="tooltip">
+    Clears key & ciphertext from memory after use.
+  </span>
+</span>
+</label>
+
+<button onclick="generateKey()">Generate Secret</button>
+<div id="keyStatus" class="status red">🔴 Secret not generated</div>
+<div id="keyDisplay"></div>
+</div>
+
+<div class="flow">⬇️ Encryption Flow ⬇️</div>
+
+<div class="card">
+<label>Plaintext Input
+<span class="info">i
+  <span class="tooltip">
+    Data before encryption.
+  </span>
+</span>
+</label>
+<textarea id="plaintext"></textarea>
+
+<label>Encrypted Output
+<span class="info">i
+  <span class="tooltip">
+    Raw AES ciphertext (hex).
+  </span>
+</span>
+</label>
+<textarea id="ciphertext" readonly></textarea>
+
+<button onclick="encrypt()" id="encBtn" disabled>Encrypt</button>
+<button onclick="exportEncrypted()">Export Encrypted File</button>
+</div>
+
+<div class="flow">⬇️ Decryption / Attack ⬇️</div>
+
+<div class="card">
+<label>Decrypted Output</label>
+<textarea id="decrypted" readonly></textarea>
+
+<button onclick="decrypt()">Decrypt</button>
+<button onclick="bitflip()" id="attackBtn" disabled>
+CBC Bit-Flipping Attack
+<span class="info">i
+  <span class="tooltip">
+    Flips ciphertext bits to corrupt plaintext without detection.
+  </span>
+</span>
+</button>
+
+<button onclick="openThreatModel()">Threat Model</button>
+</div>
+
+</div>
+
+<!-- Threat Model Modal -->
+<div class="modal" id="threatModal">
+  <div class="modal-content">
+    <span class="close" onclick="closeThreatModel()">X</span>
+    <h3>🔍 Threat Model Explanation</h3>
+    <p><b>CBC Attack:</b> No authentication. Attacker flips bits → corrupted plaintext.</p>
+    <p><b>GCM:</b> Authenticated. Any modification → decryption fails.</p>
+    <p><b>Impact:</b> Integrity + authenticity violation.</p>
+  </div>
+</div>
+
+<script>
+let keyReady = false;
+
+function modeChanged() {
+  keyReady = false;
+  document.getElementById("keyStatus").className = "status red";
+  document.getElementById("keyStatus").innerText = "🔴 Regenerate secret for new mode";
+  encBtn.disabled = true;
+  attackBtn.disabled = true;
+}
+
+async function generateKey() {
+  const res = await fetch("/generate-key", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({bits: bits.value})
+  });
+  const data = await res.json();
+  keyDisplay.innerText = data.key;
+  keyStatus.innerText = "🟢 Secret Ready";
+  keyStatus.className = "status green";
+  keyReady = true;
+  encBtn.disabled = false;
+  attackBtn.disabled = mode.value !== "CBC";
+}
+
+async function encrypt() {
+  const res = await fetch("/encrypt", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      plaintext: plaintext.value,
+      mode: mode.value
+    })
+  });
+  const data = await res.json();
+  ciphertext.value = data.ciphertext;
+}
+
+async function decrypt() {
+  const res = await fetch("/decrypt", {method: "POST"});
+  const data = await res.json();
+  decrypted.value = data.output;
+
+  if (safeMode.checked) {
+    plaintext.value = "";
+  }
+}
+
+async function bitflip() {
+  await fetch("/bitflip", {method: "POST"});
+  alert("Ciphertext bit flipped — decrypt to observe corruption");
+}
+
+function exportEncrypted() {
+  const blob = new Blob([ciphertext.value], {type: "text/plain"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "encrypted.txt";
+  a.click();
+}
+
+function openThreatModel() {
+  threatModal.style.display = "block";
+}
+function closeThreatModel() {
+  threatModal.style.display = "none";
+}
+</script>
+
+</body>
+</html>
